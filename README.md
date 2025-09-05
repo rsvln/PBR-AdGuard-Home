@@ -180,19 +180,19 @@ nslookup youtube.com
 
 ```
 Клиенты → redirect (53→5353) → AdGuard Home
-    ↓                             ↓
-dnsmasq ← форвардинг ←──────────────┘
-    ↓
-nft sets ← PBR
-    ↑
-PBR Sync Service → Query Log API
+    ↓                               ↑ ↓
+dnsmasq ← форвардинг ←──────────────┘ │
+    ↓                                 │
+nft sets ← PBR                        │
+    ↑                                 │
+PBR Sync Service ←── Query Log API ───┘
 ```
 
 **Поток данных:**
 1. Клиенты делают DNS запросы на порт 53
 2. Redirect правила перенаправляют их на AdGuard Home (5353)
 3. AdGuard Home обрабатывает запросы и логирует их с реальными IP клиентов
-4. PBR Sync Service мониторит Query Log через API
+4. PBR Sync Service опрашивает Query Log API AdGuard Home
 5. При обнаружении доменов из PBR политик добавляет IP в nft sets
 6. dnsmasq продолжает работать с форвардингом для системных запросов
 7. PBR использует заполненные nft sets для маршрутизации трафика
