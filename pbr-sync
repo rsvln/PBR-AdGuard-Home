@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+
+# OpenWrt init.d скрипт для PBR-AdGuard синхронизации
+
+START=99
+STOP=10
+
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command /opt/pbr-sync/start.sh
+    procd_set_param respawn
+    procd_set_param env SYNC_INTERVAL="2"
+    procd_close_instance
+}
+
+restart() {
+    stop
+    start
+}
