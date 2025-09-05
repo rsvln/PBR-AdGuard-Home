@@ -19,15 +19,15 @@
 - Docker в bridge режиме → все запросы от IP контейнера
 - Docker в host режиме → все запросы от IP хоста OpenWrt  
 - Docker на macvlan → все запросы от IP macvlan интерфейса
-- Форвардинг через dnsmasq + EDNS → AdGuard Home все равно видит только 127.0.0.1 (https://github.com/AdguardTeam/AdGuardHome/issues/1727)
+- Форвардинг через dnsmasq + ECS → AdGuard Home все равно видит только 127.0.0.1
 - Любое размещение AdGuard Home → либо нет статистики, либо не работает PBR с доменами
 
-Корневая причина:
-AdGuard Home не поддерживает корректную обработку EDNS Client Subnet (ECS) при форвардинге запросов. Даже при включении ECS в dnsmasq и AdGuard Home, реальные IP клиентов не передаются и в логах AdGuard Home всегда отображается IP хоста OpenWrt (см. GitHub issue #1727).
-Это архитектурная проблема AdGuard Home, которая делает невозможным одновременное использование:
+**Корневая причина:**
+AdGuard Home не поддерживает корректную обработку EDNS Client Subnet (ECS) при форвардинге запросов. Даже при включении ECS в dnsmasq и AdGuard Home, реальные IP клиентов не передаются и в логах AdGuard Home всегда отображается IP хоста OpenWrt (см. [GitHub issue #1727](https://github.com/AdguardTeam/AdGuardHome/issues/1727)).
 
-Детальной статистики по IP клиентов в AdGuard Home
-Автоматического заполнения PBR nft sets через dnsmasq при форвардинге
+Это архитектурная проблема AdGuard Home, которая делает невозможным одновременное использование:
+1. Детальной статистики по IP клиентов в AdGuard Home
+2. Автоматического заполнения PBR nft sets через dnsmasq при форвардинге
 
 ### Решение
 
