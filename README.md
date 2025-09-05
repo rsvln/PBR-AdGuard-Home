@@ -19,7 +19,7 @@
 - Docker в bridge режиме → все запросы от IP контейнера
 - Docker в host режиме → все запросы от IP хоста OpenWrt  
 - Docker на macvlan → все запросы от IP macvlan интерфейса
-- Форвардинг через dnsmasq + EDNS → AdGuard Home все равно видит только 127.0.0.1
+- Форвардинг через dnsmasq + EDNS → AdGuard Home все равно видит только 127.0.0.1 (https://github.com/AdguardTeam/AdGuardHome/issues/1727)
 - Любое размещение AdGuard Home → либо нет статистики, либо не работает PBR с доменами
 
 **Корневая причина:**
