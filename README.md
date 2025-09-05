@@ -237,30 +237,7 @@ uci commit dhcp
 - Высокая производительность AdGuard Home
 - Локальные домены через DNS rewrites в AdGuard Home
 
-### Схема 2: AdGuard Home на отдельной машине
-
-```
-Клиенты → AdGuard Home (удаленный сервер)
-             ↑ ↓
-   Query Log API ←→ PBR Sync Service (роутер) → nft sets ← PBR
-```
-
-**Настройка:**
-```bash
-# AdGuard Home на отдельном сервере/VPS
-# В DHCP OpenWrt указать IP сервера как DNS
-
-# В PBR Sync Service изменить URL
-export ADGUARD_URL="http://192.168.11.X:3000"
-```
-
-**Преимущества:**
-- Снижение нагрузки на роутер
-- Независимое масштабирование DNS сервиса
-- Удаленное управление DNS политиками
-- Полная видимость клиентов
-
-### Схема 3: Текущая (с redirect правилами)
+### Схема 2: Текущая (с redirect правилами)
 
 ```
 Клиенты → redirect (53→5353) → AdGuard Home
