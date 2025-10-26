@@ -278,10 +278,10 @@ class PBRSyncService:
         self.last_check = datetime.now(timezone.utc) - timedelta(minutes=5)
         self.sync_interval = int(os.getenv('SYNC_INTERVAL', 2))
 
-        # Настройки Browserless для прогрева доменов
-        self.browserless_enabled = os.getenv('BROWSERLESS_ENABLED', 'false').lower() == 'true'
-        self.browserless_url = os.getenv('BROWSERLESS_URL', 'http://localhost:3000')
-        self.browserless_wait_time = int(os.getenv('BROWSERLESS_WAIT_TIME', 3000))
+        # Настройки FlareSolverr для прогрева доменов
+        self.flaresolverr_enabled = os.getenv('FLARESOLVERR_ENABLED', 'false').lower() == 'true'
+        self.flaresolverr_url = os.getenv('FLARESOLVERR_URL', 'http://localhost:8191')
+        self.flaresolverr_timeout = int(os.getenv('FLARESOLVERR_TIMEOUT', 60000))
     
     def parse_query_time(self, time_str: str) -> datetime:
         """Парсит время из AdGuard Home с правильной обработкой timezone"""
@@ -368,12 +368,12 @@ class PBRSyncService:
         self.nft_manager.discover_sets()
 
     def warmup_domains(self):
-        """Прогревает домены после перезагрузки PBR через браузер"""
-        if not self.browserless_enabled:
-            logger.info("Прогрев доменов отключен (BROWSERLESS_ENABLED=false)")
+        """Прогревает домены после перезагрузки PBR через FlareSolverr"""
+        if not self.flaresolverr_enabled:
+            logger.info("Прогрев доменов отключен (FLARESOLVERR_ENABLED=false)")
             return
 
-        logger.info("Начинаем прогрев доменов через браузер...")
+        logger.info("Начинаем прогрев доменов через FlareSolverr (обход Cloudflare/капч)...")
 
         # Берем ВСЕ домены из всех активных политик
         domains = set()
@@ -394,16 +394,24 @@ class PBRSyncService:
             try:
                 logger.info(f"Прогрев {domain}...")
                 response = requests.post(
-                    f'{self.browserless_url}/content',
+                    f'{self.flaresolverr_url}/v1',
                     json={
+                        'cmd': 'request.get',
                         'url': f'https://{domain}',
-                        'waitFor': self.browserless_wait_time
+                        'maxTimeout': self.flaresolverr_timeout
                     },
-                    timeout=60
+                    timeout=120
                 )
                 response.raise_for_status()
-                success_count += 1
-                logger.info(f"✓ {domain} прогрет успешно")
+
+                result = response.json()
+                if result.get('status') == 'ok':
+                    success_count += 1
+                    logger.info(f"✓ {domain} прогрет успешно")
+                else:
+                    error_count += 1
+                    error_msg = result.get('message', 'Unknown error')
+                    logger.error(f"✗ FlareSolverr ошибка для {domain}: {error_msg}")
             except Exception as e:
                 error_count += 1
                 logger.error(f"✗ Ошибка прогрева {domain}: {e}")
