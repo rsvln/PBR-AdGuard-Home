@@ -58,7 +58,8 @@ class PBRConfig:
                         self.policies[current_policy] = {
                             'name': '',
                             'interface': '',
-                            'domains': []
+                            'domains': [],
+                            'enabled': True  # По умолчанию политика активна
                         }
                 
                 elif current_policy and 'name=' in line:
@@ -74,10 +75,17 @@ class PBRConfig:
                     # Разбиваем домены по пробелам
                     domains = [d.strip() for d in dest_addr.split() if self.is_domain(d)]
                     self.policies[current_policy]['domains'] = domains
-            
-            logger.info(f"Загружено {len(self.policies)} PBR политик")
+
+                elif current_policy and 'enabled=' in line:
+                    enabled = line.split('enabled=')[1].strip("'\"")
+                    # enabled может быть '1' или '0'
+                    self.policies[current_policy]['enabled'] = enabled == '1'
+
+            enabled_count = sum(1 for p in self.policies.values() if p['enabled'])
+            logger.info(f"Загружено {len(self.policies)} PBR политик ({enabled_count} активных)")
             for policy_id, policy in self.policies.items():
-                logger.info(f"  {policy['name']}: {len(policy['domains'])} доменов -> {policy['interface']}")
+                status = "✓" if policy['enabled'] else "✗"
+                logger.info(f"  [{status}] {policy['name']}: {len(policy['domains'])} доменов -> {policy['interface']}")
         
         except Exception as e:
             logger.error(f"Ошибка загрузки PBR конфигурации: {e}")
@@ -88,12 +96,23 @@ class PBRConfig:
         return bool(re.match(domain_pattern, text)) and '.' in text
     
     def get_all_domains(self) -> Dict[str, str]:
-        """Возвращает словарь домен -> интерфейс для всех политик"""
+        """Возвращает словарь домен -> интерфейс для всех активных политик"""
         domain_map = {}
         for policy in self.policies.values():
-            for domain in policy['domains']:
-                domain_map[domain] = policy['interface']
+            # Учитываем только активные (enabled) политики
+            if policy['enabled']:
+                for domain in policy['domains']:
+                    domain_map[domain] = policy['interface']
         return domain_map
+
+    def get_name_to_interface_map(self) -> Dict[str, str]:
+        """Возвращает словарь имя политики -> интерфейс для всех активных политик"""
+        name_map = {}
+        for policy in self.policies.values():
+            # Учитываем только активные (enabled) политики
+            if policy['enabled'] and policy['name']:
+                name_map[policy['name'].lower()] = policy['interface']
+        return name_map
 
 class AdGuardHomeAPI:
     """Клиент для работы с AdGuard Home API"""
@@ -142,8 +161,9 @@ class AdGuardHomeAPI:
 
 class NFTablesManager:
     """Управление nftables sets"""
-    
-    def __init__(self):
+
+    def __init__(self, pbr_config: PBRConfig):
+        self.pbr_config = pbr_config
         self.nft_sets = {}
         self.discover_sets()
     
@@ -156,31 +176,34 @@ class NFTablesManager:
                 text=True,
                 check=True
             )
-            
+
+            # Получаем маппинг name -> interface из PBR конфигурации (только для активных политик)
+            name_to_interface = self.pbr_config.get_name_to_interface_map()
+
             current_set = None
             for line in result.stdout.split('\n'):
                 line = line.strip()
-                
+
                 # Ищем PBR sets
                 if 'set pbr_' in line and '{' in line:
                     set_name = re.search(r'set (pbr_\w+)', line)
                     if set_name:
                         current_set = set_name.group(1)
                         self.nft_sets[current_set] = {
-                            'interface': 'awgmd',  # По умолчанию awgmd для всех PBR sets
+                            'interface': None,  # Будет определен по комментарию
                             'elements': set()
                         }
-                
-                # Ищем комментарий с именем интерфейса (в отдельной строке)
+
+                # Ищем комментарий с именем политики (в отдельной строке)
                 elif current_set and 'comment' in line:
                     comment_match = re.search(r'comment "(\w+)"', line)
                     if comment_match:
                         comment = comment_match.group(1)
-                        # Определяем интерфейс по комментарию
-                        if comment in ['youtube', 'ai', 'p']:
-                            self.nft_sets[current_set]['interface'] = 'awgmd'
-                        else:
-                            self.nft_sets[current_set]['interface'] = comment
+                        # Определяем интерфейс по комментарию из PBR конфигурации
+                        # Если комментарий соответствует имени активной политики - используем её интерфейс
+                        # Иначе используем комментарий как имя интерфейса напрямую
+                        interface = name_to_interface.get(comment.lower(), comment)
+                        self.nft_sets[current_set]['interface'] = interface
                 
                 # Ищем элементы sets
                 elif current_set and 'elements = {' in line:
@@ -249,7 +272,7 @@ class PBRSyncService:
             os.getenv('ADGUARD_USER'),
             os.getenv('ADGUARD_PASS')
         )
-        self.nft_manager = NFTablesManager()
+        self.nft_manager = NFTablesManager(self.pbr_config)
         self.processed_queries = set()
         # Устанавливаем last_check с timezone
         self.last_check = datetime.now(timezone.utc) - timedelta(minutes=5)
