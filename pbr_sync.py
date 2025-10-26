@@ -277,6 +277,11 @@ class PBRSyncService:
         # Устанавливаем last_check с timezone
         self.last_check = datetime.now(timezone.utc) - timedelta(minutes=5)
         self.sync_interval = int(os.getenv('SYNC_INTERVAL', 2))
+
+        # Настройки Browserless для прогрева доменов
+        self.browserless_enabled = os.getenv('BROWSERLESS_ENABLED', 'false').lower() == 'true'
+        self.browserless_url = os.getenv('BROWSERLESS_URL', 'http://localhost:3000')
+        self.browserless_wait_time = int(os.getenv('BROWSERLESS_WAIT_TIME', 3000))
     
     def parse_query_time(self, time_str: str) -> datetime:
         """Парсит время из AdGuard Home с правильной обработкой timezone"""
@@ -361,7 +366,50 @@ class PBRSyncService:
         logger.info("Перезагрузка PBR конфигурации...")
         self.pbr_config.load_config()
         self.nft_manager.discover_sets()
-    
+
+    def warmup_domains(self):
+        """Прогревает домены после перезагрузки PBR через браузер"""
+        if not self.browserless_enabled:
+            logger.info("Прогрев доменов отключен (BROWSERLESS_ENABLED=false)")
+            return
+
+        logger.info("Начинаем прогрев доменов через браузер...")
+
+        # Берем ВСЕ домены из всех активных политик
+        domains = set()
+        for policy in self.pbr_config.policies.values():
+            if policy['enabled']:
+                domains.update(policy['domains'])
+
+        if not domains:
+            logger.warning("Нет доменов для прогрева")
+            return
+
+        logger.info(f"Будет прогрето {len(domains)} доменов")
+
+        success_count = 0
+        error_count = 0
+
+        for domain in domains:
+            try:
+                logger.info(f"Прогрев {domain}...")
+                response = requests.post(
+                    f'{self.browserless_url}/content',
+                    json={
+                        'url': f'https://{domain}',
+                        'waitFor': self.browserless_wait_time
+                    },
+                    timeout=60
+                )
+                response.raise_for_status()
+                success_count += 1
+                logger.info(f"✓ {domain} прогрет успешно")
+            except Exception as e:
+                error_count += 1
+                logger.error(f"✗ Ошибка прогрева {domain}: {e}")
+
+        logger.info(f"Прогрев завершен: {success_count} успешно, {error_count} ошибок")
+
     def restart_pbr_service(self):
         """Перезапускает PBR сервис (ежедневная очистка)"""
         logger.info("Перезапуск PBR сервиса для очистки правил...")
@@ -370,6 +418,9 @@ class PBRSyncService:
             time.sleep(10)  # Ждем перезапуска
             self.nft_manager.discover_sets()
             logger.info("PBR сервис успешно перезапущен")
+
+            # Прогреваем домены после перезагрузки
+            self.warmup_domains()
         except Exception as e:
             logger.error(f"Ошибка перезапуска PBR: {e}")
     
